@@ -1,0 +1,18 @@
+name: CD - Promote to Production
+
+on:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  promote:
+    runs-on: self-hosted
+    environment: production   # bật required reviewers trên GitHub Environments
+    steps:
+      - uses: actions/checkout@v4
+      - name: Promote model
+        run: |
+          python scripts/promote_model.py \
+            --model sentiment140-logreg \
+            --from-stage Staging \
+            --to-stage Production
