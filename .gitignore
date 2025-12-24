@@ -224,3 +224,6 @@ __pycache__/
 *.log
 
 airflow/logs/
+# Large datasets
+data/
+*.csv
