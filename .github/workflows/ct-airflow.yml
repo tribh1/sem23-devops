@@ -1,0 +1,25 @@
+name: CT - Trigger Airflow
+
+on:
+  push:
+    branches: [ "dev", "test", "product" ]
+
+jobs:
+  trigger_ct:
+    runs-on: self-hosted
+    steps:
+      - name: Trigger DAG run
+        run: |
+          curl -X POST "http://AIRFLOW_HOST:8080/api/v1/dags/ct_train_register/dagRuns" \
+            -H "Content-Type: application/json" \
+            -u "${AIRFLOW_USER}:${AIRFLOW_PASS}" \
+            -d '{
+              "conf": {
+                "branch": "${{ github.ref_name }}",
+                "git_sha": "${{ github.sha }}"
+              }
+            }'
+        env:
+          AIRFLOW_HOST: ${{ secrets.AIRFLOW_HOST }}
+          AIRFLOW_USER: ${{ secrets.AIRFLOW_USER }}
+          AIRFLOW_PASS: ${{ secrets.AIRFLOW_PASS }}
