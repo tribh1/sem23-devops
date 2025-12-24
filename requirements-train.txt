@@ -1,0 +1,6 @@
+pandas
+pyarrow
+scikit-learn
+mlflow
+numpy
+kaggle
