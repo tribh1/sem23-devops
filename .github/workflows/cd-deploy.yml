@@ -1,0 +1,22 @@
+name: CD - Deploy Serving
+
+on:
+  push:
+    branches: [ "test", "product", "staging" ]
+
+jobs:
+  deploy:
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set stage by branch
+        run: |
+          if [ "${{ github.ref_name }}" = "test" ]; then echo "MODEL_STAGE=Test" >> $GITHUB_ENV; fi
+          if [ "${{ github.ref_name }}" = "product" ]; then echo "MODEL_STAGE=Staging" >> $GITHUB_ENV; fi
+          if [ "${{ github.ref_name }}" = "staging" ]; then echo "MODEL_STAGE=Staging" >> $GITHUB_ENV; fi
+
+      - name: Deploy serving
+        run: |
+          export MODEL_STAGE=${MODEL_STAGE}
+          docker compose up -d serving
