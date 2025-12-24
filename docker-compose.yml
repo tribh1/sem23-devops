@@ -1,0 +1,158 @@
+version: "3.9"
+
+services:
+  # =========================
+  # Database (Airflow + MLflow)
+  # =========================
+  postgres:
+    image: postgres:14
+    container_name: postgres
+    environment:
+      POSTGRES_USER: mlops
+      POSTGRES_PASSWORD: mlops
+      POSTGRES_DB: mlops
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+
+  # =========================
+  # MinIO (Artifact store)
+  # =========================
+  minio:
+    image: minio/minio:latest
+    container_name: minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minio
+      MINIO_ROOT_PASSWORD: minio123
+    volumes:
+      - minio_data:/data
+    ports:
+      - "9000:9000"   # S3 API
+      - "9001:9001"   # Console
+    restart: unless-stopped
+
+  # =========================
+  # MLflow Tracking Server
+  # =========================
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:v2.11.3
+    container_name: mlflow
+    depends_on:
+      - postgres
+      - minio
+    environment:
+      MLFLOW_TRACKING_URI: http://0.0.0.0:5000
+      MLFLOW_BACKEND_STORE_URI: postgresql://mlops:mlops@postgres:5432/mlops
+      MLFLOW_ARTIFACT_ROOT: s3://mlflow/
+      AWS_ACCESS_KEY_ID: minio
+      AWS_SECRET_ACCESS_KEY: minio123
+      MLFLOW_S3_ENDPOINT_URL: http://minio:9000
+    command: >
+      mlflow server
+      --host 0.0.0.0
+      --port 5000
+      --backend-store-uri postgresql://mlops:mlops@postgres:5432/mlops
+      --default-artifact-root s3://mlflow/
+    ports:
+      - "5000:5000"
+    restart: unless-stopped
+
+  # =========================
+  # Airflow (Webserver + Scheduler)
+  # =========================
+  airflow-webserver:
+    image: apache/airflow:2.9.3-python3.11
+    container_name: airflow-webserver
+    depends_on:
+      - postgres
+      - mlflow
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://mlops:mlops@postgres:5432/mlops
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__WEBSERVER__EXPOSE_CONFIG: "true"
+      AIRFLOW__WEBSERVER__RBAC: "true"
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+      KAGGLE_JSON: ${KAGGLE_JSON}
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - ./airflow/logs:/opt/airflow/logs
+      - ./src:/opt/airflow/src
+    ports:
+      - "8080:8080"
+    command: >
+      bash -c "
+      pip install kaggle pandas scikit-learn mlflow pyarrow &&
+      airflow db upgrade &&
+      airflow users create
+        --username admin
+        --password admin
+        --firstname admin
+        --lastname admin
+        --role Admin
+        --email admin@example.com || true &&
+      airflow webserver
+      "
+    restart: unless-stopped
+
+  airflow-scheduler:
+    image: apache/airflow:2.9.3-python3.11
+    container_name: airflow-scheduler
+    depends_on:
+      - airflow-webserver
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://mlops:mlops@postgres:5432/mlops
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+      KAGGLE_JSON: ${KAGGLE_JSON}
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - ./airflow/logs:/opt/airflow/logs
+      - ./src:/opt/airflow/src
+    command: >
+      bash -c "
+      pip install kaggle pandas scikit-learn mlflow pyarrow &&
+      airflow scheduler
+      "
+    restart: unless-stopped
+
+  # =========================
+  # Serving API (FastAPI)
+  # =========================
+  serving:
+    build: ./src/serving
+    container_name: serving
+    depends_on:
+      - mlflow
+    environment:
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+      MODEL_NAME: sentiment140-logreg
+      MODEL_STAGE: Staging
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+
+  # =========================
+  # Grafana (Monitoring)
+  # =========================
+  grafana:
+    image: grafana/grafana:10.4.2
+    container_name: grafana
+    depends_on:
+      - postgres
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+    volumes:
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "3000:3000"
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  minio_data:
+  grafana_data:
