@@ -18,7 +18,12 @@ jobs:
         run: |
           pip install -r requirements-train.txt
           pip install -r requirements-serving.txt
+          pip install pytest
 
       - name: Smoke import
         run: |
           python -c "import sklearn, mlflow; print('ok')"
+
+      - name: Run unit tests
+        run: |
+          pytest -q
